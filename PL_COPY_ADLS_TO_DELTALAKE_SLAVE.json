@@ -1,0 +1,468 @@
+{
+	"name": "PL_COPY_ADLS_TO_DELTALAKE_SLAVE",
+	"properties": {
+		"activities": [
+			{
+				"name": "Load Delta Lake",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "Set Start Delta Lake Load",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Sprint-3/PBI-23833/Task-23949/LoadDeltaLake_parameter",
+					"baseParameters": {
+						"datalake_connection": "xxxxxxxxxxxxx.dfs.core.windows.net",
+						"target_file": {
+							"value": "@{pipeline().parameters.TargetFileName}",
+							"type": "Expression"
+						},
+						"target_PKColumns": {
+							"value": "@{pipeline().parameters.PKColumns}",
+							"type": "Expression"
+						},
+						"source_file": {
+							"value": "@{pipeline().parameters.Filename}",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_ADV_XPRT01",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Set Start Delta Lake Load",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "LK_AUDIT_ON_BEGIN_LOGID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[execution].[Pipeline_DeltaLake_OnBegin]",
+					"storedProcedureParameters": {
+						"Id": {
+							"value": {
+								"value": "@pipeline().parameters.Id",
+								"type": "Expression"
+							},
+							"type": "Int32"
+						},
+						"PipelineRunId": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"StartTime": {
+							"value": {
+								"value": "@utcnow()",
+								"type": "Expression"
+							},
+							"type": "DateTime"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_ASQL_SQ01_CONFIG",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Set DeltaLake Load OK",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Load Delta Lake",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[execution].[Pipeline_DeltaLake_OnEnd]",
+					"storedProcedureParameters": {
+						"EndTime": {
+							"value": {
+								"value": "@utcnow()",
+								"type": "Expression"
+							},
+							"type": "DateTime"
+						},
+						"Id": {
+							"value": {
+								"value": "@pipeline().parameters.Id",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_ASQL_SQ01_CONFIG",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Set Set DeltaLake Load NOT OK",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Load Delta Lake",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[execution].[Pipeline_DeltaLake_OnError]",
+					"storedProcedureParameters": {
+						"EndTime": {
+							"value": {
+								"value": "@utcnow()",
+								"type": "Expression"
+							},
+							"type": "DateTime"
+						},
+						"Id": {
+							"value": {
+								"value": "@pipeline().parameters.Id",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_ASQL_SQ01_CONFIG",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Insert DataStore File",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Set DeltaLake Load OK",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "sp_executesql",
+					"storedProcedureParameters": {
+						"STMNT": {
+							"value": {
+								"value": "INSERT INTO\t[execution].[Pipeline_DataStore]\n\t\t\t(\n\t\t\t PipelineParameterId\n\t\t\t,FileName\n                        ,FileInsertDateTime\n\t\t\t)\nVALUES\t\t(\n\t\t\t@{pipeline().parameters.PipelineParameterId}\n\t\t\t,'@{pipeline().parameters.TargetFileName}'\n\t\t        ,GETUTCDATE()\n\t\t\t)",
+								"type": "Expression"
+							}
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_ASQL_SQ01_CONFIG",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "SP_AUDIT_ON_BEGIN",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[audit].[Event_Pipeline_OnBegin]",
+					"storedProcedureParameters": {
+						"DatafactoryName": {
+							"value": {
+								"value": "@pipeline().DataFactory",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"Description": {
+							"value": {
+								"value": "@pipeline().TriggerType",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"logicalDate": {
+							"value": {
+								"value": "@formatDateTime(utcNow(),'yyyy.MM.dd')",
+								"type": "Expression"
+							},
+							"type": "DateTime"
+						},
+						"logID": {
+							"value": null,
+							"type": "Int32"
+						},
+						"operator": {
+							"value": {
+								"value": "@pipeline().TriggerName",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"ParentLogID": {
+							"value": {
+								"value": "@pipeline().parameters.ParentLogID",
+								"type": "Expression"
+							},
+							"type": "Int32"
+						},
+						"PipelineName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunId": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "Guid"
+						},
+						"StartTime": {
+							"value": {
+								"value": "@utcnow()",
+								"type": "Expression"
+							},
+							"type": "DateTime"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_ASQL_SQ01_CONFIG",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "LK_AUDIT_ON_BEGIN_LOGID",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "SP_AUDIT_ON_BEGIN",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "SELECT  [LogID]  FROM [audit].[Pipeline_ExecutionLog]  where PipelineRunId='@{pipeline().RunId}'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "DS_CONFIG_ASQL",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "SP_AUDIT_ON_ERROR",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Load Delta Lake",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[audit].[Event_Pipeline_OnError]",
+					"storedProcedureParameters": {
+						"failureMessage": {
+							"value": {
+								"value": "@{activity('Load Delta Lake').error.errorCode}",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"logID": {
+							"value": {
+								"value": "@{activity('LK_AUDIT_ON_BEGIN_LOGID').output.firstRow.logID}",
+								"type": "Expression"
+							},
+							"type": "Int32"
+						},
+						"reference": {
+							"value": {
+								"value": "@{activity('Load Delta Lake').output.runpageurl}",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_ASQL_SQ01_CONFIG",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "SP_AUDIT_ON_END",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Load Delta Lake",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[audit].[Event_Pipeline_OnEnd]",
+					"storedProcedureParameters": {
+						"logID": {
+							"value": {
+								"value": "@{activity('LK_AUDIT_ON_BEGIN_LOGID').output.firstRow.logID}",
+								"type": "Expression"
+							},
+							"type": "Int32"
+						},
+						"reference": {
+							"value": {
+								"value": "@{activity('Load Delta Lake').output.runOutput} : @{activity('Load Delta Lake').output.runpageurl}",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"RowsRead": {
+							"value": null,
+							"type": "Int32"
+						},
+						"RowsSkipped": {
+							"value": null,
+							"type": "Int32"
+						},
+						"RowsWritten": {
+							"value": null,
+							"type": "Int32"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_ASQL_SQ01_CONFIG",
+					"type": "LinkedServiceReference"
+				}
+			}
+		],
+		"parameters": {
+			"TableCatalog": {
+				"type": "string"
+			},
+			"Id": {
+				"type": "string"
+			},
+			"PKColumns": {
+				"type": "string"
+			},
+			"Filename": {
+				"type": "string"
+			},
+			"TargetFileName": {
+				"type": "string"
+			},
+			"ParentLogID": {
+				"type": "int"
+			},
+			"PipelineParameterId": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "DeltaLake"
+		},
+		"annotations": []
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
